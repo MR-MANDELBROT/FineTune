@@ -79,13 +79,19 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
         ),
     ]
 
-    nonisolated func handles(bundleID: String) -> Bool {
-        Self.recipes[bundleID] != nil
-    }
-
     // MARK: - PlaybackControlling
 
-    func state(bundleID: String) async -> PlaybackState? {
+    func reachableStates(among runningBundleIDs: Set<String>) async -> [String: PlaybackState] {
+        var result: [String: PlaybackState] = [:]
+        for bundleID in runningBundleIDs where Self.recipes[bundleID] != nil {
+            if let state = await state(bundleID: bundleID) {
+                result[bundleID] = state
+            }
+        }
+        return result
+    }
+
+    private func state(bundleID: String) async -> PlaybackState? {
         guard let recipe = Self.recipes[bundleID], !denied.contains(bundleID) else { return nil }
         guard let raw = run(recipe.state, bundleID: bundleID, expectsResult: true) else { return nil }
 

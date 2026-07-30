@@ -39,8 +39,23 @@ final class PlaybackCoordinator {
     /// coordinator without a real workspace.
     private let runningBundleIDs: @MainActor () -> Set<String>
 
+    /// Which adapter produced each app's state, so a toggle goes back to the same
+    /// mechanism that reported it.
+    private var owners: [String: any PlaybackControlling] = [:]
+
+    /// AppleScript first: it addresses apps individually and precisely. MediaRemote
+    /// then fills in whatever is left, which is at most the one app owning the Now
+    /// Playing session.
+    static func defaultAdapters() -> [any PlaybackControlling] {
+        var adapters: [any PlaybackControlling] = [AppleScriptPlaybackAdapter()]
+        if let mediaRemote = MediaRemotePlaybackAdapter() {
+            adapters.append(mediaRemote)
+        }
+        return adapters
+    }
+
     init(
-        adapters: [any PlaybackControlling] = [AppleScriptPlaybackAdapter()],
+        adapters: [any PlaybackControlling] = PlaybackCoordinator.defaultAdapters(),
         runningBundleIDs: @escaping @MainActor () -> Set<String> = {
             Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         }
@@ -60,7 +75,7 @@ final class PlaybackCoordinator {
     // MARK: - Commands
 
     func toggle(bundleID: String?) {
-        guard let bundleID, let adapter = adapter(for: bundleID) else { return }
+        guard let bundleID, let adapter = owners[bundleID] else { return }
 
         // Flip optimistically so the icon answers the click immediately; the refresh
         // below corrects it if the app disagreed.
@@ -106,29 +121,26 @@ final class PlaybackCoordinator {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let candidates = runningBundleIDs()
-        let reachable = candidates.filter { bundleID in adapter(for: bundleID) != nil }
-        logger.debug("refresh: \(candidates.count) running, \(reachable.count) with an adapter")
+        let running = runningBundleIDs()
 
         var next: [String: PlaybackState] = [:]
-        for bundleID in reachable {
-            guard let adapter = adapter(for: bundleID) else { continue }
-            if let state = await adapter.state(bundleID: bundleID) {
+        var nextOwners: [String: any PlaybackControlling] = [:]
+        for adapter in adapters {
+            // First adapter to claim an app wins, so the precise mechanism keeps
+            // apps that both could reach.
+            for (bundleID, state) in await adapter.reachableStates(among: running)
+            where next[bundleID] == nil {
                 next[bundleID] = state
-            } else {
-                logger.debug("no state from \(bundleID, privacy: .public)")
+                nextOwners[bundleID] = adapter
             }
         }
-        logger.debug("refresh done: \(next.count) controllable")
+        owners = nextOwners
+        logger.debug("refresh: \(running.count) running, \(next.count) controllable")
 
         let changed = Set(next.keys) != Set(states.keys)
         states = next
         if changed {
             onControllableAppsChanged?()
         }
-    }
-
-    private func adapter(for bundleID: String) -> (any PlaybackControlling)? {
-        adapters.first { $0.handles(bundleID: bundleID) }
     }
 }

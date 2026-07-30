@@ -130,6 +130,7 @@
 				79A607AB2F05C9E00008D52A /* Sources */,
 				79A607AC2F05C9E00008D52A /* Frameworks */,
 				79A607AD2F05C9E00008D52A /* Resources */,
+				79A607F02F05C9E00008D52A /* Build MediaRemote bridge */,
 			);
 			buildRules = (
 			);
@@ -268,6 +269,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		79A607F02F05C9E00008D52A /* Build MediaRemote bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/MediaRemoteBridge/nowplaying.m",
+				"$(SRCROOT)/MediaRemoteBridge/nowplaying.pl",
+			);
+			name = "Build MediaRemote bridge";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/libFineTuneNowPlaying.dylib",
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/nowplaying.pl",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nSRC=\"$SRCROOT/MediaRemoteBridge\"\nDEST=\"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources\"\nmkdir -p \"$DEST\"\nARCH_FLAGS=\"\"\nfor arch in $ARCHS; do ARCH_FLAGS=\"$ARCH_FLAGS -arch $arch\"; done\nclang -dynamiclib -fobjc-arc -fvisibility=default $ARCH_FLAGS \\\n  -isysroot \"$SDKROOT\" -mmacosx-version-min=\"$MACOSX_DEPLOYMENT_TARGET\" \\\n  -framework Foundation -framework AppKit \\\n  -o \"$DEST/libFineTuneNowPlaying.dylib\" \"$SRC/nowplaying.m\"\ncp \"$SRC/nowplaying.pl\" \"$DEST/nowplaying.pl\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" \"$DEST/libFineTuneNowPlaying.dylib\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		79A607AB2F05C9E00008D52A /* Sources */ = {

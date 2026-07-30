@@ -24,8 +24,12 @@ actor MockPlaybackAdapter: PlaybackControlling {
         self.handled = handled ?? Set(states.keys)
     }
 
-    nonisolated func handles(bundleID: String) -> Bool {
-        handled.contains(bundleID)
+    func reachableStates(among runningBundleIDs: Set<String>) async -> [String: PlaybackState] {
+        var result: [String: PlaybackState] = [:]
+        for bundleID in runningBundleIDs where handled.contains(bundleID) {
+            if let state = states[bundleID] { result[bundleID] = state }
+        }
+        return result
     }
 
     func state(bundleID: String) async -> PlaybackState? {
