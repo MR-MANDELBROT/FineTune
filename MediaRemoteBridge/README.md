@@ -22,7 +22,8 @@ Measured on macOS 26.3: identical code returns the full Now Playing payload unde
 
 FineTune can only offer a transport button for the app that currently owns the Now
 Playing session. This is a routing decision inside `mediaremoted`, not a gap in the
-implementation. What follows is the evidence, recorded so nobody repeats it.
+implementation. What follows is the evidence, recorded so nobody repeats it — plus
+one lead that is still open, under "The layer below Now Playing".
 
 ### Enumeration works
 
@@ -88,6 +89,47 @@ redirecting it.
 
 There is no API that enumerates the players belonging to a client, so a path can
 never name anything more specific than `default`.
+
+### The layer below Now Playing — open lead
+
+Everything above goes through the *Now Playing* family, which by design addresses
+whatever owns the session: it is the route for the media keys and AirPods.
+`_MRMediaRemoteSendCommandToPlayerWithResult` calls
+`MRMediaRemoteNowPlayingResolvePlayerPath` unconditionally, and that resolution
+happens server-side via `sharedServiceClient`. So the client named in the path
+never gets a say.
+
+There is a lower layer that skips it entirely:
+
+```
+MRMediaRemoteServiceSendCommand(service, message, queue, completion)
+```
+
+It calls only `MRCreateXPCMessage` and `MRAddSendCommandToXPCMessage` — no Now
+Playing resolution anywhere in it. The pieces needed to drive it:
+
+- `MRSendCommandMessage` has `-initWithCommand:options:playerPath:`, so the whole
+  command including the target path travels inside one object.
+- The service is `[[MRMediaRemoteServiceClient sharedServiceClient] service]` —
+  an `MRMediaRemoteService`. The client itself does not respond to `connection`.
+- `MRMediaRemoteServiceSendCommand` is **not** an exported symbol. On this build
+  it sits `0xC1EAC` below the exported `MRMediaRemoteSendCommand` in the same
+  image; that offset is specific to one macOS build and would need a sturdier
+  lookup before shipping.
+
+This route does reach the daemon: it answered with a real `MRCommandResult`
+carrying both a `playerPath` and an `error` — the first genuine diagnostics
+obtained anywhere in this investigation.
+
+It is **not** resolved whether it routes per app. In the one measured run the
+command arrived as `Unrecognized Command: 4177879401`, i.e. the command argument
+was mis-encoded by the probe rather than rejected by the daemon, and the reply
+still named the active client. The probe was fixed but not re-run. Anyone picking
+this up should start there: send a correctly encoded `kMRTogglePlayPause` (2) and
+check whether `MRCommandResult.playerPath` comes back naming the requested app.
+
+Even if it works, shipping it means calling an unexported function through a
+hardcoded offset. That is a different risk class from the rest of this bridge.
 
 ### Other write paths
 
