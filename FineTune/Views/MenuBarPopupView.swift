@@ -34,6 +34,9 @@ struct MenuBarPopupView: View {
     /// apps start and stop playing.
     @Bindable var playbackCoordinator: PlaybackCoordinator
 
+    /// Keeps rows from rearranging under the cursor when playback state changes.
+    @State private var orderHold = AppRowOrderHold()
+
     /// Memoized sorted output devices - only recomputed when device list or default changes
     @State private var sortedDevices: [AudioDevice] = []
 
@@ -211,12 +214,17 @@ struct MenuBarPopupView: View {
             isPopupVisible = true
             popupVisibility.isVisible = true
             playbackCoordinator.setPolling(true)
+            orderHold.beginHold(order: audioEngine.displayableApps.map(\.id))
             audioEngine.bluetoothDeviceMonitor.refresh()
             syncNavOrder()
             hasKeyboardEngaged = false
             selectedRow = nil
             anchorFocused = true
             textEntry.buffer = nil
+        }
+        .onChange(of: audioEngine.displayableApps.map(\.id)) { _, newOrder in
+            // Only matters while the hold is active; it schedules the catch-up.
+            orderHold.noteOrderChanged(to: newOrder)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
@@ -225,6 +233,7 @@ struct MenuBarPopupView: View {
             isPopupVisible = false
             popupVisibility.isVisible = false
             playbackCoordinator.setPolling(false)
+            orderHold.endHold()
             hasKeyboardEngaged = false
             selectedRow = nil
         }
@@ -850,7 +859,7 @@ struct MenuBarPopupView: View {
     private func appsContent(scrollProxy: ScrollViewProxy) -> some View {
         let presets = audioEngine.settingsManager.getUserPresets()
         return VStack(alignment: .leading, spacing: 0) {
-            ForEach(audioEngine.displayableApps) { displayableApp in
+            ForEach(orderHold.arrange(audioEngine.displayableApps, id: \.id)) { displayableApp in
                 switch displayableApp {
                 case .active(let app):
                     activeAppRow(app: app, displayableApp: displayableApp, userPresets: presets, scrollProxy: scrollProxy)
