@@ -217,7 +217,10 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
         }
     }
 
-    private func refresh() {
+    /// Recomputes both app lists now. Callable from outside so that newly discovered
+    /// playback state can revise the idle list immediately, rather than waiting out
+    /// the periodic refresh.
+    func refresh() {
         do {
             let processIDs = try AudioObjectID.readProcessList()
             let runningApps = NSWorkspace.shared.runningApplications

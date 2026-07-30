@@ -1,5 +1,6 @@
 // FineTune/Audio/Playback/PlaybackCoordinator.swift
 import AppKit
+import os
 
 /// Tracks which running apps expose controllable playback, and drives them.
 ///
@@ -13,9 +14,19 @@ final class PlaybackCoordinator {
     /// appear here, which makes membership the capability check.
     private(set) var states: [String: PlaybackState] = [:]
 
+    /// Fired when the set of controllable apps changes. The process monitor listens so
+    /// an app discovered as paused earns its idle row immediately — otherwise the row
+    /// would only appear on the next periodic refresh, long after the user looked.
+    var onControllableAppsChanged: (() -> Void)?
+
     private let adapters: [any PlaybackControlling]
     private var pollTask: Task<Void, Never>?
     private var isRefreshing = false
+
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "FineTune",
+        category: "PlaybackCoordinator"
+    )
 
     /// Polling cadence while the popup is on screen. Playback state changes from
     /// outside FineTune (media keys, the app's own UI) should show up promptly.
@@ -70,6 +81,7 @@ final class PlaybackCoordinator {
     /// what triggers macOS's automation prompt, and that belongs in a moment the user
     /// initiated rather than out of the blue in the background.
     func setPolling(_ active: Bool) {
+        logger.debug("setPolling(\(active, privacy: .public))")
         guard active else {
             pollTask?.cancel()
             pollTask = nil
@@ -94,14 +106,26 @@ final class PlaybackCoordinator {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        let candidates = runningBundleIDs()
+        let reachable = candidates.filter { bundleID in adapter(for: bundleID) != nil }
+        logger.debug("refresh: \(candidates.count) running, \(reachable.count) with an adapter")
+
         var next: [String: PlaybackState] = [:]
-        for bundleID in runningBundleIDs() {
+        for bundleID in reachable {
             guard let adapter = adapter(for: bundleID) else { continue }
             if let state = await adapter.state(bundleID: bundleID) {
                 next[bundleID] = state
+            } else {
+                logger.debug("no state from \(bundleID, privacy: .public)")
             }
         }
+        logger.debug("refresh done: \(next.count) controllable")
+
+        let changed = Set(next.keys) != Set(states.keys)
         states = next
+        if changed {
+            onControllableAppsChanged?()
+        }
     }
 
     private func adapter(for bundleID: String) -> (any PlaybackControlling)? {

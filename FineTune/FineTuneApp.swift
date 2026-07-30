@@ -216,6 +216,11 @@ struct FineTuneApp: App {
             guard let bundleID = app.bundleID else { return false }
             return playback?.state(for: bundleID) != nil
         }
+        // A newly discovered paused app has to revise the idle list right away; the
+        // monitor's 10s cadence is far too slow to catch the moment the popup opens.
+        playback.onControllableAppsChanged = { [weak engine] in
+            (engine?.processMonitor as? AudioProcessMonitor)?.refresh()
+        }
         _playbackCoordinator = State(initialValue: playback)
 
         let popupController = MenuBarPopupController()
