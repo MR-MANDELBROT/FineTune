@@ -776,7 +776,7 @@ struct MenuBarPopupView: View {
             LazyVGrid(columns: appEditColumns, spacing: DesignTokens.Spacing.xs) {
                 ForEach(audioEngine.displayableApps) { displayableApp in
                     switch displayableApp {
-                    case .active(let app):
+                    case .active(let app), .idle(let app):
                         AppEditRow(
                             icon: app.icon,
                             name: app.name,
@@ -849,8 +849,8 @@ struct MenuBarPopupView: View {
                 case .active(let app):
                     activeAppRow(app: app, displayableApp: displayableApp, userPresets: presets, scrollProxy: scrollProxy)
 
-                case .pinnedInactive(let info):
-                    inactiveAppRow(info: info, displayableApp: displayableApp, userPresets: presets, scrollProxy: scrollProxy)
+                case .pinnedInactive, .idle:
+                    inactiveAppRow(displayableApp: displayableApp, userPresets: presets, scrollProxy: scrollProxy)
                 }
             }
         }
@@ -929,12 +929,12 @@ struct MenuBarPopupView: View {
         }
     }
 
-    /// Row for a pinned inactive app (not currently producing audio)
+    /// Row for an app that is not currently producing audio — pinned or idle
     @ViewBuilder
-    private func inactiveAppRow(info: PinnedAppInfo, displayableApp: DisplayableApp, userPresets: [UserEQPreset], scrollProxy: ScrollViewProxy) -> some View {
-        let identifier = info.persistenceIdentifier
+    private func inactiveAppRow(displayableApp: DisplayableApp, userPresets: [UserEQPreset], scrollProxy: ScrollViewProxy) -> some View {
+        let identifier = displayableApp.id
         InactiveAppRow(
-            appInfo: info,
+            displayName: displayableApp.displayName,
             icon: displayableApp.icon,
             volume: audioEngine.getVolumeForInactive(identifier: identifier),
             devices: sortedDevices,

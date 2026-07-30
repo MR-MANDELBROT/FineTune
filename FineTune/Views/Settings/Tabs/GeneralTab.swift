@@ -82,6 +82,16 @@ struct GeneralTab: View {
             ) {
                 PopupSizeTilePicker(selection: $settings.appSettings.popupSize)
             }
+            SettingsRowDivider()
+            SettingsRow(
+                "Show Idle Apps",
+                description: "Keep recently used apps listed while they are silent, so paused playback stays reachable"
+            ) {
+                Toggle("", isOn: $settings.appSettings.showIdleApps)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+            }
         }
     }
 

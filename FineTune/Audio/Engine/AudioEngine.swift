@@ -405,10 +405,18 @@ final class AudioEngine {
         processMonitor.activeApps
     }
 
-    // MARK: - Displayable Apps (Active + Pinned Inactive)
+    /// Apps holding a CoreAudio process object without currently running IO — paused
+    /// media, essentially. Display-only: these never provision taps.
+    var idleApps: [AudioApp] {
+        guard settingsManager.appSettings.showIdleApps else { return [] }
+        return processMonitor.idleApps
+    }
 
-    /// Combined list of active apps and pinned inactive apps for UI display.
-    /// Pinned apps appear first (sorted alphabetically), then unpinned active apps (sorted alphabetically).
+    // MARK: - Displayable Apps (Active + Pinned Inactive + Idle)
+
+    /// Combined list of active apps, pinned inactive apps and idle apps for UI display.
+    /// Pinned apps appear first (sorted alphabetically), then unpinned active apps,
+    /// then idle apps last — they are the least urgent thing on screen.
     var displayableApps: [DisplayableApp] {
         let activeApps = apps
             .filter { !appListCoordinator.isIgnored(identifier: $0.persistenceIdentifier) }
@@ -435,7 +443,16 @@ final class AudioEngine {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             .map { DisplayableApp.active($0) }
 
-        return pinnedActive + pinnedInactive + unpinnedActive
+        // Idle apps, minus anything already on screen as active or pinned.
+        let pinnedIdentifiers = Set(pinnedInactiveInfos.map { $0.persistenceIdentifier })
+        let idle = idleApps
+            .filter { !appListCoordinator.isIgnored(identifier: $0.persistenceIdentifier) }
+            .filter { !activeIdentifiers.contains($0.persistenceIdentifier) }
+            .filter { !pinnedIdentifiers.contains($0.persistenceIdentifier) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map { DisplayableApp.idle($0) }
+
+        return pinnedActive + pinnedInactive + unpinnedActive + idle
     }
 
     // MARK: - Pinning

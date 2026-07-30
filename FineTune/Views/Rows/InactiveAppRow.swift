@@ -1,14 +1,15 @@
 // FineTune/Views/Rows/InactiveAppRow.swift
 import SwiftUI
 
-/// A row displaying a pinned but inactive app (not currently producing audio).
+/// A row displaying an app that is not currently producing audio — either pinned by
+/// the user, or idle (holding a CoreAudio process object while paused).
 /// Similar to AppRow but:
-/// - Uses PinnedAppInfo instead of AudioApp
+/// - Takes a plain display name, so it serves both inactive sources
 /// - VU meter always shows 0 (no audio level polling)
 /// - Slightly dimmed appearance to indicate inactive state
 /// - All settings (volume/mute/EQ/device) work normally and are persisted
 struct InactiveAppRow: View {
-    let appInfo: PinnedAppInfo
+    let displayName: String
     let icon: NSImage
     let volume: Float  // Linear gain 0-1 (boost applied separately)
     let devices: [AudioDevice]
@@ -41,7 +42,7 @@ struct InactiveAppRow: View {
     @State private var localEQSettings: EQSettings
 
     init(
-        appInfo: PinnedAppInfo,
+        displayName: String,
         icon: NSImage,
         volume: Float,
         devices: [AudioDevice],
@@ -71,7 +72,7 @@ struct InactiveAppRow: View {
         onEQToggle: @escaping () -> Void = {},
         isFocused: Bool = false
     ) {
-        self.appInfo = appInfo
+        self.displayName = displayName
         self.icon = icon
         self.volume = volume
         self.devices = devices
@@ -119,10 +120,10 @@ struct InactiveAppRow: View {
                 // App name + optional routing subtitle (hidden when the app is on
                 // system default).
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(appInfo.displayName)
+                    Text(displayName)
                         .font(DesignTokens.Typography.rowName)
                         .lineLimit(1)
-                        .help(appInfo.displayName)
+                        .help(displayName)
                         .foregroundStyle(DesignTokens.Colors.textPrimary)
 
                     if let subtitle = DevicePicker.routingSubtitle(

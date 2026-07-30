@@ -13,7 +13,23 @@ private struct AppFingerprint: Hashable {
 @MainActor
 final class AudioProcessMonitor: AudioProcessMonitoring {
     private(set) var activeApps: [AudioApp] = []
+    private(set) var idleApps: [AudioApp] = []
     var onAppsChanged: (([AudioApp]) -> Void)?
+
+    /// How long an app keeps an idle row after its last observed audio output.
+    /// The list starts empty at launch and fills as apps get used, which keeps it
+    /// predictable — CoreAudio's own process list is far too sticky to show raw
+    /// (it retains every process that has produced audio since boot).
+    static let idleRetentionWindow: TimeInterval = 30 * 60
+
+    /// Second chance for idle apps that fall outside the retention window.
+    /// `AudioEngine` wires this to playback control, so an app that has been sitting
+    /// paused since before FineTune launched still earns a row.
+    var idleAppRetentionPolicy: ((AudioApp) -> Bool)?
+
+    /// Last time each app was seen running audio, keyed by persistence identifier so
+    /// the history survives relaunches (which change the PID).
+    private var lastActiveAt: [String: Date] = [:]
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AudioProcessMonitor")
 
@@ -212,10 +228,11 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
             let myPID = ProcessInfo.processInfo.processIdentifier
 
             var appsByPID: [pid_t: AudioApp] = [:]
+            var idleByPID: [pid_t: AudioApp] = [:]
 
             for objectID in processIDs {
                 guard let pid = try? objectID.readProcessPID(), pid != myPID else { continue }
-                guard objectID.readProcessIsRunning() else { continue }
+                let isRunning = objectID.readProcessIsRunning()
 
                 // Try to find the parent app (for helper processes like Safari Graphics and Media)
                 let directApp = runningAppsByPID[pid]
@@ -225,6 +242,12 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
                 let resolvedApp = isRealApp ? directApp : findResponsibleApp(for: pid, in: runningAppsByPID)
                 let parentPID = resolvedApp?.processIdentifier ?? pid
                 let isHelper = parentPID != pid
+
+                // An idle process only earns a row if it resolves to a real app bundle.
+                // Unresolvable ones are daemons and background helpers that the user has
+                // no notion of — they'd swamp the list, since CoreAudio keeps a process
+                // object around long after the audio stopped.
+                if !isRunning && resolvedApp == nil { continue }
 
                 // Use resolved app's info, fall back to Core Audio bundle ID
                 let name = resolvedApp?.localizedName
@@ -238,29 +261,15 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
                 // Skip system daemons (siri, coreaudio, etc.) - they shouldn't appear in the apps list
                 if isSystemDaemon(bundleID: bundleID, name: name) { continue }
 
-                // Merge helper process objectIDs into parent app entry
-                if let existing = appsByPID[parentPID] {
-                    if !existing.processObjectIDs.contains(objectID) {
-                        var mergedIDs = existing.processObjectIDs
-                        mergedIDs.append(objectID)
-                        mergedIDs.sort()
-                        appsByPID[parentPID] = AudioApp(
-                            id: existing.id,
-                            processObjectIDs: mergedIDs,
-                            name: existing.name,
-                            icon: existing.icon,
-                            bundleID: existing.bundleID,
-                            isHelperBacked: existing.isHelperBacked || isHelper
-                        )
-                    }
+                if isRunning {
+                    merge(
+                        into: &appsByPID, parentPID: parentPID, objectID: objectID,
+                        name: name, icon: icon, bundleID: bundleID, isHelper: isHelper
+                    )
                 } else {
-                    appsByPID[parentPID] = AudioApp(
-                        id: parentPID,
-                        processObjectIDs: [objectID],
-                        name: name,
-                        icon: icon,
-                        bundleID: bundleID,
-                        isHelperBacked: isHelper
+                    merge(
+                        into: &idleByPID, parentPID: parentPID, objectID: objectID,
+                        name: name, icon: icon, bundleID: bundleID, isHelper: isHelper
                     )
                 }
             }
@@ -275,6 +284,11 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
             let newSet = Set(sorted.map { AppFingerprint(pid: $0.id, objectIDs: $0.processObjectIDs) })
 
             activeApps = sorted
+            idleApps = resolveIdleApps(idleByPID, activeApps: sorted)
+
+            // Deliberately keyed off the active fingerprint only: this callback drives tap
+            // provisioning, and idle apps must never provision anything. Idle-list changes
+            // reach the UI through @Observable instead.
             if oldSet != newSet {
                 onAppsChanged?(activeApps)
             }
@@ -282,6 +296,72 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
         } catch {
             logger.error("Failed to refresh process list: \(error.localizedDescription)")
         }
+    }
+
+    /// Adds `objectID` to the bucket entry for `parentPID`, merging helper processes
+    /// into the app that owns them.
+    private func merge(
+        into bucket: inout [pid_t: AudioApp],
+        parentPID: pid_t,
+        objectID: AudioObjectID,
+        name: String,
+        icon: NSImage,
+        bundleID: String?,
+        isHelper: Bool
+    ) {
+        guard let existing = bucket[parentPID] else {
+            bucket[parentPID] = AudioApp(
+                id: parentPID,
+                processObjectIDs: [objectID],
+                name: name,
+                icon: icon,
+                bundleID: bundleID,
+                isHelperBacked: isHelper
+            )
+            return
+        }
+
+        guard !existing.processObjectIDs.contains(objectID) else { return }
+
+        var mergedIDs = existing.processObjectIDs
+        mergedIDs.append(objectID)
+        mergedIDs.sort()
+        bucket[parentPID] = AudioApp(
+            id: existing.id,
+            processObjectIDs: mergedIDs,
+            name: existing.name,
+            icon: existing.icon,
+            bundleID: existing.bundleID,
+            isHelperBacked: existing.isHelperBacked || isHelper
+        )
+    }
+
+    /// Records activity for the apps that are currently running and narrows the idle
+    /// candidates down to the ones worth a row.
+    private func resolveIdleApps(_ candidates: [pid_t: AudioApp], activeApps: [AudioApp]) -> [AudioApp] {
+        let now = Date()
+        for app in activeApps {
+            lastActiveAt[app.persistenceIdentifier] = now
+        }
+
+        // Keep the history from growing without bound across long uptimes.
+        let cutoff = now.addingTimeInterval(-Self.idleRetentionWindow * 4)
+        lastActiveAt = lastActiveAt.filter { $0.value > cutoff }
+
+        // An app running audio through one process while another sits idle (Safari and
+        // its media helper) must not appear twice.
+        let activeIdentifiers = Set(activeApps.map(\.persistenceIdentifier))
+
+        return candidates.values
+            .filter { !activeIdentifiers.contains($0.persistenceIdentifier) }
+            .filter { shouldRetainIdleApp($0, now: now) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func shouldRetainIdleApp(_ app: AudioApp, now: Date) -> Bool {
+        if idleAppRetentionPolicy?(app) == true { return true }
+        guard let last = lastActiveAt[app.persistenceIdentifier] else { return false }
+        return now.timeIntervalSince(last) <= Self.idleRetentionWindow
     }
 
     private func updateProcessListeners(for processIDs: [AudioObjectID]) {
