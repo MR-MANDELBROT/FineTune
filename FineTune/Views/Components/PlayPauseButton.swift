@@ -28,7 +28,7 @@ struct PlayPauseButton: View {
                     .opacity(0)
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
             }
-            .font(.system(size: 12))
+            .font(.system(size: 13))
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(buttonColor)
             .scaleEffect(isPulsing ? 1.1 : 1.0)

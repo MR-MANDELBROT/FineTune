@@ -87,7 +87,7 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
 
     func state(bundleID: String) async -> PlaybackState? {
         guard let recipe = Self.recipes[bundleID], !denied.contains(bundleID) else { return nil }
-        guard let raw = run(recipe.state, bundleID: bundleID) else { return nil }
+        guard let raw = run(recipe.state, bundleID: bundleID, expectsResult: true) else { return nil }
 
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "playing", "fast forwarding", "rewinding", "true":
@@ -102,7 +102,8 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
 
     func playPause(bundleID: String) async {
         guard let recipe = Self.recipes[bundleID], !denied.contains(bundleID) else { return }
-        _ = run(recipe.toggle, bundleID: bundleID)
+        // Toggle commands return nothing by design, so no result is expected.
+        _ = run(recipe.toggle, bundleID: bundleID, expectsResult: false)
     }
 
     // MARK: - Execution
@@ -110,7 +111,7 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
     /// Runs `source`, returning its string result. Wrapped in a short Apple Event
     /// timeout so an unresponsive target cannot stall the poll for the default 2
     /// minutes.
-    private func run(_ source: String, bundleID: String) -> String? {
+    private func run(_ source: String, bundleID: String, expectsResult: Bool) -> String? {
         let wrapped = """
             with timeout of 2 seconds
             \(source)
@@ -121,7 +122,10 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
         if let cached = compiled[wrapped] {
             script = cached
         } else {
-            guard let fresh = NSAppleScript(source: wrapped) else { return nil }
+            guard let fresh = NSAppleScript(source: wrapped) else {
+                logger.error("Could not compile playback script for \(bundleID, privacy: .public)")
+                return nil
+            }
             compiled[wrapped] = fresh
             script = fresh
         }
@@ -141,6 +145,15 @@ actor AppleScriptPlaybackAdapter: PlaybackControlling {
             return nil
         }
 
-        return result.stringValue
+        guard let value = result.stringValue else {
+            if expectsResult {
+                // Reached when the event is blocked outright rather than refused — most
+                // likely a missing com.apple.security.automation.apple-events entitlement,
+                // which hardened runtime requires before any Apple Event may be sent.
+                logger.error("Playback script for \(bundleID, privacy: .public) returned no value and no error")
+            }
+            return nil
+        }
+        return value
     }
 }
