@@ -50,6 +50,7 @@ struct FineTuneApp: App {
     @State private var menuBarPopupController: MenuBarPopupController
     @State private var shortcutsRegistry: ShortcutsRegistry
     @State private var resolver: TargetAppResolver
+    @State private var playbackCoordinator: PlaybackCoordinator
     @StateObject private var updateManager = UpdateManager()
     @State private var showMenuBarExtra = true
 
@@ -92,7 +93,8 @@ struct FineTuneApp: App {
             mediaKeyStatus: mediaKeyStatus,
             popupVisibility: popupVisibility,
             hudController: hudController,
-            mediaKeyMonitor: mediaKeyMonitor
+            mediaKeyMonitor: mediaKeyMonitor,
+            playbackCoordinator: playbackCoordinator
         )
         .task {
             // Idempotent: subsequent task runs (popup re-open) are no-ops inside start().
@@ -206,6 +208,16 @@ struct FineTuneApp: App {
         // permission required for the hotkey itself). Registry start() is deferred
         // to a SwiftUI `.task` on the popup content so the FluidMenuBarExtra
         // status item has been materialized before any hotkey can fire.
+        // Playback control. The retention policy lets an app that has been paused
+        // since before launch hold an idle row: it never played on our watch, so the
+        // monitor's own activity history would drop it.
+        let playback = PlaybackCoordinator()
+        (engine.processMonitor as? AudioProcessMonitor)?.idleAppRetentionPolicy = { [weak playback] app in
+            guard let bundleID = app.bundleID else { return false }
+            return playback?.state(for: bundleID) != nil
+        }
+        _playbackCoordinator = State(initialValue: playback)
+
         let popupController = MenuBarPopupController()
         let resolver = TargetAppResolver(
             ownBundleID: Bundle.main.bundleIdentifier ?? "com.finetuneapp.FineTune"

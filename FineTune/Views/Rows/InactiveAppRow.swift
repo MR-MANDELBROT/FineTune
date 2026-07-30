@@ -38,6 +38,7 @@ struct InactiveAppRow: View {
     let isEQExpanded: Bool
     let onEQToggle: () -> Void
     let isFocused: Bool
+    let playback: PlaybackControl?
 
     @State private var localEQSettings: EQSettings
 
@@ -70,7 +71,8 @@ struct InactiveAppRow: View {
         onRenameUserPreset: @escaping (UUID, String) -> Void = { _, _ in },
         isEQExpanded: Bool = false,
         onEQToggle: @escaping () -> Void = {},
-        isFocused: Bool = false
+        isFocused: Bool = false,
+        playback: PlaybackControl? = nil
     ) {
         self.displayName = displayName
         self.icon = icon
@@ -101,6 +103,7 @@ struct InactiveAppRow: View {
         self.isEQExpanded = isEQExpanded
         self.onEQToggle = onEQToggle
         self.isFocused = isFocused
+        self.playback = playback
         self._localEQSettings = State(initialValue: eqSettings)
     }
 
@@ -162,7 +165,8 @@ struct InactiveAppRow: View {
                     onDeviceModeChange: onDeviceModeChange,
                     onSelectFollowDefault: onSelectFollowDefault,
                     onEQToggle: onEQToggle,
-                    isRowFocused: isFocused
+                    isRowFocused: isFocused,
+                    playback: playback
                 )
             }
             .frame(height: DesignTokens.Dimensions.rowContentHeight)

@@ -24,6 +24,9 @@ struct AppRowControls: View {
     let onSelectFollowDefault: () -> Void
     let onEQToggle: () -> Void
     var isRowFocused: Bool = false
+    /// Transport control, when the app exposes playback FineTune can reach.
+    /// `nil` draws no button rather than a dead one.
+    var playback: PlaybackControl? = nil
 
     @State private var dragOverrideValue: Double?
     @State private var isEQButtonHovered = false
@@ -67,6 +70,11 @@ struct AppRowControls: View {
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
+            // Play/pause, for apps that expose a transport
+            if let playback {
+                PlayPauseButton(state: playback.state, action: playback.toggle)
+            }
+
             // Mute button
             MuteButton(isMuted: showMutedIcon, levelFraction: sliderValue) {
                 if showMutedIcon {

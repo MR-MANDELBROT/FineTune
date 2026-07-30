@@ -4,6 +4,8 @@
 <dict>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>FineTune needs to control other apps to show and toggle their playback from the menu bar.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>FineTune needs access to control volume levels for individual applications.</string>
 	<key>NSMicrophoneUsageDescription</key>

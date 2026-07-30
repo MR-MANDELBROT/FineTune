@@ -34,6 +34,7 @@ struct AppRow: View {
     let isEQExpanded: Bool
     let onEQToggle: () -> Void
     let isFocused: Bool
+    let playback: PlaybackControl?
 
     @State private var isIconHovered = false
     @State private var localEQSettings: EQSettings
@@ -68,7 +69,8 @@ struct AppRow: View {
         onRenameUserPreset: @escaping (UUID, String) -> Void = { _, _ in },
         isEQExpanded: Bool = false,
         onEQToggle: @escaping () -> Void = {},
-        isFocused: Bool = false
+        isFocused: Bool = false,
+        playback: PlaybackControl? = nil
     ) {
         self.app = app
         self.volume = volume
@@ -100,6 +102,7 @@ struct AppRow: View {
         self.isEQExpanded = isEQExpanded
         self.onEQToggle = onEQToggle
         self.isFocused = isFocused
+        self.playback = playback
         // Initialize local EQ state for reactive UI updates
         self._localEQSettings = State(initialValue: eqSettings)
     }
@@ -175,7 +178,8 @@ struct AppRow: View {
                     onDeviceModeChange: onDeviceModeChange,
                     onSelectFollowDefault: onSelectFollowDefault,
                     onEQToggle: onEQToggle,
-                    isRowFocused: isFocused
+                    isRowFocused: isFocused,
+                    playback: playback
                 )
             }
             .frame(height: DesignTokens.Dimensions.rowContentHeight)

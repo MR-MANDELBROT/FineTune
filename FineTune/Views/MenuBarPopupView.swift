@@ -30,6 +30,10 @@ struct MenuBarPopupView: View {
     /// wired in `FineTuneApp.init`.
     let mediaKeyMonitor: MediaKeyMonitor
 
+    /// Playback state for apps that expose a transport. Bindable so rows re-render as
+    /// apps start and stop playing.
+    @Bindable var playbackCoordinator: PlaybackCoordinator
+
     /// Memoized sorted output devices - only recomputed when device list or default changes
     @State private var sortedDevices: [AudioDevice] = []
 
@@ -206,6 +210,7 @@ struct MenuBarPopupView: View {
             else { return }
             isPopupVisible = true
             popupVisibility.isVisible = true
+            playbackCoordinator.setPolling(true)
             audioEngine.bluetoothDeviceMonitor.refresh()
             syncNavOrder()
             hasKeyboardEngaged = false
@@ -219,6 +224,7 @@ struct MenuBarPopupView: View {
             else { return }
             isPopupVisible = false
             popupVisibility.isVisible = false
+            playbackCoordinator.setPolling(false)
             hasKeyboardEngaged = false
             selectedRow = nil
         }
@@ -923,9 +929,22 @@ struct MenuBarPopupView: View {
                 onEQToggle: {
                     toggleEQ(for: displayableApp.id, scrollProxy: scrollProxy)
                 },
-                isFocused: hasKeyboardEngaged && selectedRow == .app(persistenceID: displayableApp.id)
+                isFocused: hasKeyboardEngaged && selectedRow == .app(persistenceID: displayableApp.id),
+                playback: playbackControl(for: displayableApp)
             )
             .id(PopupKeyboardNavModel.RowID.app(persistenceID: displayableApp.id))
+        }
+    }
+
+    /// Transport control for a row, or nil when the app exposes no playback FineTune
+    /// can reach — in which case no button is drawn at all.
+    private func playbackControl(for displayableApp: DisplayableApp) -> PlaybackControl? {
+        guard let bundleID = displayableApp.bundleID,
+              let state = playbackCoordinator.state(for: bundleID)
+        else { return nil }
+
+        return PlaybackControl(state: state) {
+            playbackCoordinator.toggle(bundleID: bundleID)
         }
     }
 
@@ -991,7 +1010,8 @@ struct MenuBarPopupView: View {
             onEQToggle: {
                 toggleEQ(for: displayableApp.id, scrollProxy: scrollProxy)
             },
-            isFocused: hasKeyboardEngaged && selectedRow == .app(persistenceID: displayableApp.id)
+            isFocused: hasKeyboardEngaged && selectedRow == .app(persistenceID: displayableApp.id),
+            playback: playbackControl(for: displayableApp)
         )
         .id(PopupKeyboardNavModel.RowID.app(persistenceID: displayableApp.id))
     }
