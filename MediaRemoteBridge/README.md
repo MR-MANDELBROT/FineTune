@@ -71,6 +71,24 @@ Corroborating: no open-source project sends per-client commands, including ones
 built entirely around MediaRemote (mediaremote-adapter, media-control,
 media-remote, mediaremote-rs). They all stop at the global command.
 
+### Redirecting the session was also tried
+
+`MRMediaRemoteSetOverriddenNowPlayingApplication` and
+`MRMediaRemoteSetNowPlayingApplicationOverrideEnabled` look like they could point
+the active session at a chosen app. They cannot: both operate on
+`[[sharedManager] localOriginClient]`, i.e. they change how *the calling process*
+advertises itself. Like most `MRMediaRemoteSet*` functions they belong to the
+publishing side, for apps declaring their own playback.
+
+`kMRMediaRemoteOptionDestinationAppDisplayID` is the only option key that names a
+target app. Passing it to `MRMediaRemoteSendCommand` makes the command vanish: sent
+with Spotify as the destination — the app that reliably reacts to the same command
+without the option — nothing happened at all. It suppresses delivery rather than
+redirecting it.
+
+There is no API that enumerates the players belonging to a client, so a path can
+never name anything more specific than `default`.
+
 ### Other write paths
 
 `CGEventPostToPid` posts an `NSSystemDefined` media key to a single process and
